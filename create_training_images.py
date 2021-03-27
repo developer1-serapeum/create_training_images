@@ -1,7 +1,8 @@
 from os import walk, path, rename, mkdir
 from shutil import move, rmtree, copy2
 from PIL import Image 
-
+from random import randint
+from time import sleep
 
 """
 The goal of this script is to create training data from banknote images.
@@ -155,9 +156,44 @@ def addBackground(backgroundPath, foregroundPath, scale=1, shift=(0,0), angle=0,
     # paste img1 on top of img2
     shift1 = (0, 0)
     shift2 = shift
-    blended = Image.new('RGBA', size=(1200, 800), color=(0, 0, 0, 0))
+    blended = Image.new('RGBA', size=(512, 512), color=(0, 0, 0, 0))
     blended.paste(img1, shift1)
     blended.paste(img2, shift2, img2)
+
+    # Save the image with a name combinig both images names
+    imageName1 = getNameWithoutExtension(backgroundPath)
+    imageName2 = getNameWithoutExtension(foregroundPath)
+    blended = blended.convert("RGB")
+    blended.save("{}/{}_{}.jpg".format(outPath, imageName2, imageName1))
+
+
+def addBackgroundTransparent(backgroundPath, foregroundPath, scale=1, shift=(0,0), angle=0, outPath="imgs_tmp"):
+    """
+    Takes a background image and a foreground image add merge them.
+    The foreground image can be scaled and be rotated. It can also 
+    be put at an aribttatry location (x,y). 
+    """
+    
+    layer1 = Image.open(backgroundPath)
+    layer1 = layer1.convert("RGBA")
+    
+    blended = Image.new("RGBA", layer1.size)
+    blended = Image.alpha_composite(blended, layer1)
+    
+    layer2 = Image.open(foregroundPath)
+    w = int(layer2.width * scale)
+    h = int(layer2.height * scale)
+    layer2 = layer2.resize((w, h))
+    layer2 = layer2.rotate(angle, expand=True)
+#    layer2 = layer2.resize(blended.size)
+    layer2 = layer2.convert("RGBA")
+
+    # paste layer2 on top of layer1
+    shift1 = (0, 0)
+    shift2 = shift
+    blended = Image.new('RGBA', size=(512, 512), color=(0, 0, 0, 0))
+    blended.paste(layer1, shift1)
+    blended.paste(layer2, shift2, layer2)
 
     # Save the image with a name combinig both images names
     imageName1 = getNameWithoutExtension(backgroundPath)
@@ -175,7 +211,7 @@ def getImages(searchDir):
 
     for root, directories, files in walk(searchDir):
         for file in files:
-            if '.jpg' in file:
+           if ('.jpg' in file) or ('.png' in file):
                 imagesPaths.append(path.join(root, file))
     
     print("Found images in '{}' = {}".format(searchDir, len(imagesPaths)))
@@ -223,20 +259,25 @@ def renameAllImages(searchDir):
 
     for root, directories, files in walk(searchDir):
         for file in files:
-            if '.jpg' in file:
+            if ('.jpg' in file) or ('.png' in file):
                 # here you can enter the new name scheme
                 newName = file[0:3]+file[5:-4]+file[2:4]+file[-4:]
                 rename(path.join(root, file), path.join(root, newName) )
+
 
 def cleanOutputDirectories(directories):
     """
     Delete all images in the output directories
     """
 
+    print("Deleting all previously generated directories")
     for directory in directories:
         if path.exists(directory):
             rmtree(directory)
-    
+
+    # it takes a while to delete all directories    
+    sleep(3)
+
     for directory in directories:
         mkdir(directory)
 
@@ -247,13 +288,14 @@ def cleanOutputDirectories(directories):
 if __name__ == "__main__":
     
     
-    TRAIN_DIR_IN = "imgs_in/train"
-    TRAIN_DIR_OUT = "imgs_out/train"
-    TRAIN_DIR_TEMP = "imgs_tmp/train"
-    VALIDATION_DIR_IN = "imgs_in/train"
-    VALIDATION_DIR_OUT = "imgs_out/validation"
-    VALIDATION_DIR_TEMP = "imgs_tmp/validation"
-
+    TRAIN_DIR_IN = "images/banknotes_in_resized/train/train_eg"
+    TRAIN_DIR_OUT = "images/imgs_out/train/"
+    TRAIN_DIR_TEMP = "images/imgs_tmp/train"
+    VALIDATION_DIR_IN = "images/imgs_in/validation"
+    VALIDATION_DIR_OUT = "images/imgs_out/validation"
+    VALIDATION_DIR_TEMP = "images/imgs_tmp/validation"
+    BACKGROUNDS_DIR = "images/backgrounds"
+    
     # Delete all previously generated images
     cleanOutputDirectories([
         TRAIN_DIR_OUT, TRAIN_DIR_TEMP,
@@ -262,39 +304,25 @@ if __name__ == "__main__":
 
     # Get a list of all bankonte images within the specified path
     imagesPaths = getImages(TRAIN_DIR_IN)
-        
-    # Create the training images into a temporary folder
+
+    # Get a list of all backgrounds images within the specified path
+    backgroundPaths = getImages(BACKGROUNDS_DIR)
+
+    background_index = 1 
     for imagePath in imagesPaths:
-        
+
         print("Working on {}".format(path.basename(imagePath)))
         
-        sliceVertical(imagePath, 0.5, TRAIN_DIR_TEMP)
-        sliceHorizontal(imagePath, 0.5, TRAIN_DIR_TEMP)
-        
-        addHoldingHnad(imagePath, "backgrounds/hand1.png", TRAIN_DIR_TEMP)
-        addHoldingHnad(imagePath, "backgrounds/hand2.png", TRAIN_DIR_TEMP)
+        for i in range(300):
+            # Add the selected banknote image to many backgrounds        
+            background = backgroundPaths[background_index]
+            x = randint(0, 100)
+            y = randint(0, 100)
+            theta = randint(0, 270)
+            addBackgroundTransparent(background, imagePath, scale=0.9, shift=(x,y), angle=theta, outPath=TRAIN_DIR_TEMP)
 
-        copy2(imagePath, TRAIN_DIR_TEMP)
-
-        addBackground("backgrounds/background01.png", imagePath, scale=0.7, shift=(250,200), angle=0, outPath=TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background02.jpg", imagePath, scale=0.6, shift=(250,200), angle=-30, outPath=TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background03.jpg", imagePath, scale=0.7, shift=(200,200), angle=30, outPath=TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background04.jpg", imagePath, scale=0.5, shift=(400,250), angle=30, outPath=TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background05.jpg", imagePath, scale=0.6, shift=(-100,150), angle=-35, outPath= TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background06.jpg", imagePath, scale=0.6, shift=(350,150), angle=-20, outPath= TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background07.jpg", imagePath, scale=0.5, shift=(850,150), angle=-85, outPath= TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background08.jpg", imagePath, scale=0.7, shift=(350,300), angle=5, outPath= TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background09.jpg", imagePath, scale=0.7, shift=(220,80), angle=-20, outPath= TRAIN_DIR_TEMP)
-        addBackground("backgrounds/background10.jpg", imagePath, scale=0.7, shift=(250,150), angle=0, outPath= TRAIN_DIR_TEMP)
-
-    # Get a list of all bankonte images within the specified path
-    imagesPaths = getImages(VALIDATION_DIR_IN)
-  
-    # Create the validation images into a temporary folder
-    for imagePath in imagesPaths:
-        addHoldingHnad(imagePath, "backgrounds/hand3.png", VALIDATION_DIR_TEMP)
+            background_index = background_index + 1
 
 
     # Group the images of one class into 1 folder
     categorizeClasses(TRAIN_DIR_TEMP, TRAIN_DIR_OUT)
-    categorizeClasses(VALIDATION_DIR_TEMP, VALIDATION_DIR_OUT)
